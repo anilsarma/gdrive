@@ -21,12 +21,12 @@ except ImportError:
     flags = None
 
 # If modifying these scopes, delete your previously saved credentials
-# at ~/.credentials/drive-python-quickstart.json
+# at ~/.credentials/drive-sync.json
 #SCOPES = 'https://www.googleapis.com/auth/drive.metadata.readonly'
 #SCOPES = 'https://www.googleapis.com/auth/drive.photos.readonly'
 SCOPES = 'https://www.googleapis.com/auth/drive'
 CLIENT_SECRET_FILE = 'client_secret.json'
-APPLICATION_NAME = 'Drive API Python Quickstart'
+APPLICATION_NAME = 'Drive Sync Program'
 
 
 def get_credentials():
@@ -42,7 +42,7 @@ def get_credentials():
     credential_dir = os.path.join(home_dir, '.credentials')
     if not os.path.exists(credential_dir):
         os.makedirs(credential_dir)
-    credential_path = os.path.join(credential_dir,  'drive-python-quickstart.json')
+    credential_path = os.path.join(credential_dir,  'drive-sync.json')
 
     store = Storage(credential_path)
     credentials = store.get()
