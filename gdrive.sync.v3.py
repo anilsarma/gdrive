@@ -13,13 +13,105 @@ from oauth2client.file import Storage
 import inspect 
 from apiclient.http import MediaFileUpload
 import hashlib
+import getopt
+import sys
+from os.path import isfile, join, isdir, exists
+from os import listdir
+import re
+
+import subprocess
+import os
+import json
+
+class ExifTool(object):
+
+    sentinel = "{ready}\n"
+
+    def __init__(self, executable="/usr/bin/exiftool"):
+        self.executable = executable
+
+   # def __enter__(self):
+        self.process = subprocess.Popen(
+            [self.executable, "-stay_open", "True",  "-@", "-"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+       # return self
+
+    def  __exit__(self, exc_type, exc_value, traceback):
+        self.process.stdin.write("-stay_open\nFalse\n")
+        self.process.stdin.flush()
+
+    def execute(self, *args):
+        args = args + ("-execute\n",)
+        self.process.stdin.write(str.join("\n", args))
+        self.process.stdin.flush()
+        output = ""
+        fd = self.process.stdout.fileno()
+        while not output.endswith(self.sentinel):
+            output += os.read(fd, 4096)
+        return output[:-len(self.sentinel)]
+
+    def get_metadata(self, filenames):
+        return json.loads(self.execute("-G", "-j", "-n", filenames))
+
+exiftool = ExifTool()
+#try:
+#    import argparse
+#    flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
+#except ImportError:
+#    flags = None
+
+VERSION="1.0"
+def usage():
+    print(sys.argv[0], " <options>")
+    print("\t version ", VERSION, " gdrive sync")
+    print("\t--dir  <directory> directory to process\n")
+    os.sys.exit(1)
 
 
+dir="."
+base_drive="PhotoBackup"
+remote_drive=None
 try:
-    import argparse
-    flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
-except ImportError:
-    flags = None
+	opts, args = getopt.getopt(sys.argv[1:], "hd:", ["help", "debug", "dir=", "remote="])
+except getopt.GetoptError as err:
+	# print help information and exit:
+	print(str(err)) # will print something like "option -a not recognized"
+	usage()
+	sys.exit(2)
+
+# argument parsing.
+for o, a in opts:
+    if o == "--help":
+        usage()
+        sys.exit(0)
+    elif o == "--debug":
+        verbose = True
+    elif o == "--param":
+        pass #params=a
+    elif o == "--dir" or o =="-d":
+        dir = a
+    elif o=="--remote":
+        remote_drive=a
+    else:
+        #assert(False!=True, "unhandled option")
+        print("error: failed")
+        sys.exit(0) 
+    
+
+
+def get_dirs(dir):
+        if not exists(dir):
+                return list()
+
+        result = [ join(dir,f) for f in listdir(dir) if isdir(join(dir,f)) ]
+        return sorted(result)
+
+def get_dirs_relative(dir):
+        if not exists(dir):
+                return list()
+
+        result = [ f for f in listdir(dir) if isdir(join(dir,f)) ]
+        return sorted(result)
 
 # If modifying these scopes, delete your previously saved credentials
 # at ~/.credentials/drive-sync.json
@@ -28,6 +120,13 @@ except ImportError:
 SCOPES = 'https://www.googleapis.com/auth/drive'
 CLIENT_SECRET_FILE = 'client_secret.json'
 APPLICATION_NAME = 'Drive Sync Program'
+
+def get_files(dir):
+    if not exists(dir):
+        return list()
+    result = [ join(dir,f) for f in listdir(dir) if isfile(join(dir,f)) ]
+    return sorted(result)
+
 
 
 def get_credentials():
@@ -108,14 +207,38 @@ def create_gdrive_folder(service, name, parentID = None):
     
     return service.files().create(body = body, fields="*").execute()
 
+
+def gdrive_check_create_folder( service, name, parent):
+
+    query="mimeType='application/vnd.google-apps.folder' and  '{0}' in parents and trashed=false and name='{1}'".format(parent, name)
+    dirs =  service.files().list( fields="nextPageToken,files" , spaces='drive', q=query).execute();
+    file = None
+    if not dirs['files']:
+        print('no entries')
+        file = create_gdrive_folder( service, name, parent)
+    else:
+        file = dirs['files'][0]
+
+    if file is None:
+        print("Failed to create {0}".format(name))
+        #os.sys.exit(0)
+            
+    return file
+
 def upload_to_gdrive(service, name, type, location, parent=None):
     # upload a file
-    body = {
-        'name' : name,
-        'mimeType' : type,
-    }
+    tmp = exiftool.get_metadata( location )
+
+    #os.exit(0)
+    body = tmp[0]
+    body['name']=  name
+    body['mimeType']= type
+
     if parent:
         body['parents'] = [ parent ]
+
+    #print(json.dumps(tmp[0], indent=4))    
+    #os.sys.exit(0)
     media = MediaFileUpload( location, mimetype=type, resumable=True )
     return  service.files().create(body=body, media_body=media, fields='*').execute()
 
@@ -129,34 +252,49 @@ def md5(fname):
                 buf = afile.read(blocksize)
         return hasher.hexdigest()
 
-def check_remote(service, name, type, location, parent=None):
+def check_remote_base(service, name, type, location, parent=None):
     # upload a file
     body = {
         'name' : name,
         'mimeType' : type,
     }
-    query = "mimeType='" + type + "'"
+    query = "mimeType='{0}'".format(type)
     if parent:
-        query = query + " and  '" + parent + "' in parents"
+        query = "{0} and  '{1}' in parents".format(query, parent)
 
-    query = query + " and trashed=false and name='" + name + "'"
+    query = "{0} and trashed=false and name='{1}'".format(query, name)
     
     results =  service.files().list( fields="nextPageToken,files" , spaces='drive', q=query).execute();
     items = results.get('files', [])
     if not items:
-        return False
+        return 0 #no items found.
 
     m = md5( location )
     for item in items:
         if item["md5Checksum"] == m:
-            print( "Check Sum:" + m + " <=> " + item["md5Checksum"] + " === matches ===" )
-            return True
+            print( "Check Sum: {0} <=> {1} ({2},{3}] === matches ===".format(m, item["md5Checksum"], name, location) )
+            return 1 # found and matches
         print( "Check Sum:" + m + " <=> " + item["md5Checksum"] )
         
+    return 2 # found files but md5 does not match.
+
+def check_remote(service, name, type, location, parent=None):
+    ret = check_remote_base(service,name, type, location, parent)
+    if ret == 1:
+        return True # found a exact match
+    return False # no matching file found.
+ 
+def check_and_upload_to_gdrive(service, name, type, location, parent=None):
+    ret = check_remote_base(service, name, type, location, parent)
+    if ret != 1:
+        print("uploading {0} from {1} to {2}".format(name, location, parent))
+        return upload_to_gdrive(service,name, type, location, parent)
+def extension_filter(f):
+    ext = os.path.splitext(f)[1][1:].strip()
+    #if (ext == "jpeg" or ext == "JPG" or ext == "MOV" ):
+    if (ext == "jpeg" or ext == "JPG" ):
+        return True
     return False
-
-
-
 
 MIME_TYPE_FOLDER="application/vnd.google-apps.folder"
 def main():
@@ -176,19 +314,19 @@ def main():
         'name' : 'photos',
         'mimeType' : 'application/vnd.google-apps.folder'
     }
-    print(dir(service))
-    about = service.about().get(fields="*").execute();
-    print(json.dumps(about, indent=4))
+    #print(dir(service))
+    #about = service.about().get(fields="*").execute();
+    #print(json.dumps(about, indent=4))
     #print(json.dumps(service.comments().list(fields="*").execute(), indent=4))
-    print("dump")
-    dire = service.files().get( fileId="0AMyFZD6ay2zeUk9PVA", fields="*" ).execute();
-    print(json.dumps(dire, indent=4))
+    #print("dump")
+    #dire = service.files().get( fileId="0AMyFZD6ay2zeUk9PVA", fields="*" ).execute();
+    #print(json.dumps(dire, indent=4))
    # set_saved_rootid("0AMyFZD6ay2zeUk9PVA")
     rootFileId = get_saved_rootid()
     if rootFileId != None:
         #pprint.pprint(inspect.getmembers(service))
         dire = service.files().get( fileId=rootFileId, fields="*" ).execute();
-        print(json.dumps(dire, indent=4))
+        #print(json.dumps(dire, indent=4))
         #os.sys.exit(0)
     else:
         page_token=None
@@ -220,31 +358,50 @@ def main():
                 break;
  
     
-    testdirs =  service.files().list( fields="nextPageToken,files" , spaces='drive', q="mimeType='application/vnd.google-apps.folder' and  '" + rootFileId + "' in parents and trashed=false and name='TestDrive'").execute();
+    #query="mimeType='application/vnd.google-apps.folder' and  '{0}' in parents and trashed=false and name='{1}'".format(rootFileId, base_drive)
+    #testdirs =  service.files().list( fields="nextPageToken,files" , spaces='drive', q=query).execute();
     #print(json.dumps(test_dir, indent=4))
-    testdriveid=None
-    if not testdirs['files']:
-        print('no entries')
-        test_dir = create_gdrive_folder( service, "TestDrive", rootFileId )
-    else:
-        test_dir = testdirs['files'][0]
 
-    if test_dir is None:
-        print("Failed to create TestDrive")
-        os.sys.exit(0)
+    #if not testdirs['files']:
+    #    print('no entries')
+    #    test_dir = create_gdrive_folder( service, base_drive, rootFileId )
+    #else:
+    #    test_dir = testdirs['files'][0]
+
+    #if test_dir is None:
+    #    print("Failed to create " + base_drive)
+    #    os.sys.exit(0)
             
-    #test_dir = test_dir['id']
-    print(json.dumps(test_dir, indent=4))
+    base_drive_file = gdrive_check_create_folder(service, base_drive, rootFileId )
 
+    #base_drive_file = base_drive_file['id']
+    print(json.dumps(base_drive_file, indent=4))
+    remote_file=None
+    if remote_drive:
+        print("checking remote drive {0}".format(remote_drive))
+        remote_file = gdrive_check_create_folder( service, remote_drive, base_drive_file['id'])
     # upload a file
     # check if files exists in remote disk
-    if not check_remote(service, "test_image.jpeg", "image/jpeg", "./test.jpeg", test_dir['id']):
-        print("uploading .... ")
-        file = upload_to_gdrive(service, "test_image.jpeg", "image/jpeg", "./test.jpeg", test_dir['id'])
 
-        print(json.dumps(file, indent=4))
-    print(test_dir['id'])
+    uploaddirID=base_drive_file['id']
+    if remote_file:
+        uploaddirID=remote_file['id']
+  
+    #print("{0} {1}".format( "directory ", dir ))
+    ext = "JPG"
+    files = get_files(dir)
+    result = [  join("", f) for f in files if  extension_filter(f) ]
+    for f in result:
+        name = os.path.basename(f)
+        r = re.search(".+\.(.+)$", name)
+        ext = r.group(1)
+        type = "image/jpeg"
+        if ext == "MOV":
+            type = "video/mpeg"
+        check_and_upload_to_gdrive(service, name, type, f, uploaddirID)
+
     os.sys.exit(0)
+
     #dire = service.files().list( fields="nextPageToken,files" , spaces='drive', q="name='My Drive'").execute();
     print(json.dumps(dire, indent=4))
     #q="mimeType='application/vnd.google-apps.folder' and name='photos'", 
