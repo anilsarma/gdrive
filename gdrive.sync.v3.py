@@ -113,18 +113,22 @@ filter=None
 #    flags = None
 
 VERSION="1.1"
-def usage():
-    print(sys.argv[0], " <options>")
-    print("\t version ", VERSION, " gdrive sync")
-    print("\t--dir  <directory> directory to process\n")
-    os.sys.exit(1)
-
-
 dir="."
 base_drive="PhotoBackup"
 remote_drive=None
+
+def usage():
+    print(sys.argv[0], " <options>")
+    print("\t version ", VERSION, " gdrive sync")
+    print("\t--dir     <directory> directory to process default={0}".format(dir))
+    print("\t--remote  <directory> gdrive directory to upload into default=None")
+    print("\t--base    <directory> gdrive base directory default={0}".format(base_drive))
+    print("\t--filter  <all|jpg|jpeg|mov|mts> list of files to upload")
+    os.sys.exit(1)
+
+
 try:
-	opts, args = getopt.getopt(sys.argv[1:], "hd:f:", ["help", "debug", "dir=", "remote=", "filter="])
+	opts, args = getopt.getopt(sys.argv[1:], "hd:f:b:", ["help", "debug", "dir=", "remote=", "filter=", "base="])
 except getopt.GetoptError as err:
 	# print help information and exit:
 	print(str(err)) # will print something like "option -a not recognized"
@@ -146,12 +150,17 @@ for o, a in opts:
         remote_drive=a
     elif o == "--filter" or o =="-f":
         filter = a
+    elif o == "--base" or o =="-b":
+	 base_drive=a
     else:
         #assert(False!=True, "unhandled option")
         print("error: failed")
         sys.exit(0) 
     
-
+if remote_drive==None:
+	print("error: remote drive not specified ")
+	usage()
+	sys.exit(2)
 
 def get_dirs(dir):
         if not exists(dir):
