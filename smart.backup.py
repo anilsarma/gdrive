@@ -43,7 +43,9 @@ def get_files(dir):
     if not exists(dir):
         return list()
     result = [ join(dir,f) for f in listdir(dir) if isfile(join(dir,f)) ]
-    return sorted(result)
+    mtime = lambda f: os.stat(f).st_mtime
+
+    return sorted(result, key=mtime)
 
 
 

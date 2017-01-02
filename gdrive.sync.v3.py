@@ -179,7 +179,9 @@ def get_files(dir):
     if not exists(dir):
         return list()
     result = [ join(dir,f) for f in listdir(dir) if isfile(join(dir,f)) ]
-    return sorted(result)
+    mtime = lambda f: os.stat(f).st_mtime
+
+    return sorted(result, key=mtime)
 
 
 
@@ -301,7 +303,7 @@ def upload_to_gdrive(service, name, type, location, parent=None):
         except googleapiclient.errors.HttpError:
             print("retrying .. after failure")
             continue
-        db.save(location, item)
+        db.save(os.path.abspath(location), item)
         break
     return item
 
@@ -317,7 +319,7 @@ def md5(fname):
 
 def check_remote_base(service, name, type, location, parent=None):
     # upload a file
-    saved = db.get(location)
+    saved = db.get(os.path.abspath(location))
     m = None
 
     if saved:
@@ -346,7 +348,7 @@ def check_remote_base(service, name, type, location, parent=None):
     for item in items:
         if item["md5Checksum"] == m:
             print( "Check Sum: {0} <=> {1} ({2},{3}] === matches ===".format(m, item["md5Checksum"], name, location) )
-            db.save(location, item)
+            db.save(os.path.abspath(location), item)
             return 1 # found and matches
         print( "Check Sum:" + m + " <=> " + item["md5Checksum"] )
         
