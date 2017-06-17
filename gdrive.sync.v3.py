@@ -381,11 +381,11 @@ def extension_filter(f):
     if filter==None or filter.upper() == "JPEG":
         if (ext == "JPEG" or ext == "JPG" ):
             return True
-    elif filter.upper() == "MOV" or filter.upper() == "MTS":
-        if (ext == "MOV" or ext == "MTS" ):
+    elif filter.upper() == "MOV" or filter.upper() == "MTS" or filter.upper() == "AVI":
+        if (ext.upper() == "MOV" or ext.upper() == "MTS" or ext.upper() == "AVI"):
             return True
     elif filter.upper() == "ALL":
-         if (ext == "JPEG" or ext == "JPG" or ext =="MOV" or ext == "MP3" or ext == "MTS"):
+         if (ext == "JPEG" or ext == "JPG" or ext =="MOV" or ext == "MP3" or ext == "MTS" or ext.upper() == "AVI" or ext == "avi"):
              return True
     return False
 
@@ -489,7 +489,8 @@ def main():
         r = re.search(".+\.(.+)$", name)
         ext = r.group(1)
         type = "image/jpeg"
-        if ext.upper() == "MOV" or ext.upper() == "MTS":
+	print( ext)
+        if ext.upper() == "MOV" or ext.upper() == "MTS" or ext.upper() == "AVI":
             type = "video/mpeg"
         check_and_upload_to_gdrive(service, name, type, f, uploaddirID)
 

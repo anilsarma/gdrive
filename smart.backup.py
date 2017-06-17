@@ -18,6 +18,8 @@ import sys
 from os.path import isfile, join, isdir, exists
 from os import listdir
 import re
+import glob
+import os
 
 def md5(fname):
         hasher = hashlib.md5()
@@ -40,9 +42,19 @@ def get_dirs(dir):
 
 
 def get_files(dir):
+   
     if not exists(dir):
         return list()
-    result = [ join(dir,f) for f in listdir(dir) if isfile(join(dir,f)) ]
+    #result = [ join(dir,f) for f in listdir(dir) if isfile(join(dir,f)) ]
+    result = []
+    for (dirpath, dirnames, filenames) in os.walk(dir):
+         for f in filenames:
+            f  = os.path.join( dirpath, f)
+            if not os.path.exists(f):
+              print("file " + str(f) + " does not exist")
+            else:
+               result.append(f)
+    print(result)
     mtime = lambda f: os.stat(f).st_mtime
 
     return sorted(result, key=mtime)
