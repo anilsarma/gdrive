@@ -54,24 +54,9 @@ class ExifTool(object):
         return json.loads(self.execute("-G", "-j", "-n", filenames))
 
 
-def get_dirs(dir):
-    if not exists(dir):
-        return list()
-
-    result = [join(dir, f) for f in listdir(dir) if isdir(join(dir, f))]
-    return sorted(result)
-
-
-def get_dirs_relative(dir):
-    if not exists(dir):
-        return list()
-
-    result = [f for f in listdir(dir) if isdir(join(dir, f))]
-    return sorted(result)
-
 
 # If modifying these scopes, delete your previously saved credentials
-# at ~/.credentials/drive-sync.json
+# at ~/.credentials/gdrive.json
 # SCOPES = 'https://www.googleapis.com/auth/drive.metadata.readonly'
 # SCOPES = 'https://www.googleapis.com/auth/drive.photos.readonly'
 # CLIENT_SECRET_FILE = 'client_secret.json'
@@ -108,12 +93,8 @@ def get_credentials():
     if not credentials or credentials.invalid:
         flow = client.flow_from_clientsecrets(CLIENT_SECRET_FILE, scope=OAUTH_SCOPE)
         flow.user_agent = APPLICATION_NAME
-        # if flags:
         http = httplib2.Http()
         credentials = tools.run_flow(flow, store, args, http=http)
-        # else: # Needed only for compatibility with Python 2.6
-        #   credentials = tools.run(flow, store)
-        # print('Storing credentials to ' + credential_path)
     return credentials
 
 
@@ -276,18 +257,19 @@ def main():
     credentials = get_credentials()
     http = credentials.authorize(httplib2.Http())
     service = discovery.build('drive', 'v3', http=http)
-    file_metadata = {
-        'name': 'photos',
-        'mimeType': 'application/vnd.google-apps.folder'
-    }
-    rootFileId = get_saved_rootid()
-    if rootFileId != None:
-        dire = service.files().get(fileId=rootFileId, fields="*").execute();
-    else:
+    # file_metadata = {
+    #     'name': 'photos',
+    #     'mimeType': 'application/vnd.google-apps.folder'
+    # }
+    gdrive_root_folder_id = get_saved_rootid()
+    # if gdrive_root_folder_id != None:
+    #     dire = service.files().get(fileId=gdrive_root_folder_id, fields="*").execute();
+    # else:
+    if gdrive_root_folder_id is None:
         page_token = None
         # parents = {}
         # look up the root folder.
-        while rootFileId is None:
+        while gdrive_root_folder_id is None:
             results = service.files().list(pageSize=100, fields="nextPageToken, files", pageToken=page_token,
                                            q="mimeType='application/vnd.google-apps.folder'").execute()
             items = results.get('files', [])
@@ -300,8 +282,8 @@ def main():
                 for item in items:
                     if 'parents' in item:
                         for p in item['parents']:
-                            rootFileId = find_rootid(service, p)
-                            if rootFileId is not None:
+                            gdrive_root_folder_id = find_rootid(service, p)
+                            if gdrive_root_folder_id is not None:
                                 break
                         print('{0} ({1})'.format(item['name'], item['id']))
                         # print ("JSON\n" + json.dumps(item, indent = 4))
@@ -309,7 +291,7 @@ def main():
             if not page_token:
                 break;
 
-    base_drive_file = gdrive_check_create_folder(service, args.google_folder, rootFileId)
+    base_drive_file = gdrive_check_create_folder(service, args.google_folder, gdrive_root_folder_id)
     uploaddir_id = base_drive_file['id']
 
     files = get_files(args.dir)
